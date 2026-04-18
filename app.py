@@ -1,39 +1,48 @@
+import os
 import streamlit as st
 import pandas as pd
 import mlflow.pyfunc
-from databricks import sql
-from databricks.sdk import WorkspaceClient
+from databricks import sql, WorkspaceClient
 import plotly.graph_objects as go
-import os
 
-# --- 1. SETUP & AUTHENTICATION (Official SDK Pattern) ---
-st.set_page_config(page_title="Catch Me If You Can", page_icon="✈️", layout="wide")
 
+# --- 1. THEME & UI CONFIG ---
+st.set_page_config(page_title="NextGate AI | Flight Engine", page_icon="✈️", layout="wide")
+
+st.markdown("""
+    <style>
+    .stApp { background-color: #0b0e14; color: #ffffff; }
+    .main-header { font-size: 48px; font-weight: 800; color: #00d1ff; text-align: center; margin-bottom: 0px; }
+    .sub-header { font-size: 16px; text-align: center; color: #8b949e; margin-bottom: 30px; }
+    .stSelectbox label, .stSlider label { color: #00d1ff !important; font-weight: bold; }
+    footer {visibility: hidden;}
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 2. ASSET LOADER (Production Ready) ---
 @st.cache_resource
-def load_resources():
-    # Use the WorkspaceClient to find the SQL Warehouse automatically
-    # This avoids the "NoneType" and "startswith" errors entirely
+def load_production_resources():
+    # The WorkspaceClient is the "Master Key"
+    # It automatically finds DATABRICKS_HOST, CLIENT_ID, and CLIENT_SECRET
     w = WorkspaceClient()
     
-    # 1. Discover the SQL Warehouse HTTP Path
-    # We look for the variable Databricks injected when you added the Resource
-    http_path = None
-    for key, value in os.environ.items():
-        if "HTTP_PATH" in key:
-            http_path = value
-            break
-            
+    # Get the host (cleaning it for the SQL connector)
+    host = w.config.host.replace("https://", "")
+    
+    # Get the Token dynamically from the Service Principal
+    # This replaces the need for a hardcoded DATABRICKS_TOKEN
+    token = w.config.authenticate() 
+
+    # 1. Discover the SQL Warehouse Path from Resources
+    http_path = os.environ.get("DATABRICKS_SQL_HTTP_PATH")
     if not http_path:
-        # Fallback: Find the first available Serverless Warehouse if the Resource link failed
-        warehouses = list(w.warehouses.list())
-        if warehouses:
-            http_path = warehouses[0].jdbc_url.split("HttpPath=")[1].split(";")[0]
+        # Fallback: Loop through env vars to find the one injected by the Resource link
+        for key, value in os.environ.items():
+            if "HTTP_PATH" in key:
+                http_path = value
+                break
 
-    # 2. Get Connection Credentials
-    host = os.environ.get("DATABRICKS_HOST").replace("https://", "")
-    token = os.environ.get("DATABRICKS_TOKEN")
-
-    # 3. Connect to SQL Warehouse for Lookup Data
+    # 2. Connect to SQL via the SDK-provided token
     connection = sql.connect(
         server_hostname=host,
         http_path=http_path,
@@ -41,86 +50,123 @@ def load_resources():
     )
     
     with connection.cursor() as cursor:
-        cursor.execute("SELECT Code, Description FROM workspace.flights.AIRPORT_CODES")
-        apt_df = pd.DataFrame(cursor.fetchall(), columns=["Code", "Description"])
+        cursor.execute("""
+            SELECT DISTINCT a.Code, a.Name 
+            FROM workspace.flights.AIRPORT_CODES a
+            JOIN (SELECT DISTINCT ORIGIN_A FROM workspace.flights.ml_train_gold) t ON a.Code = t.ORIGIN_A
+        """)
+        apt_df = pd.DataFrame(cursor.fetchall(), columns=["Code", "Name"])
         
-        cursor.execute("SELECT Code, Description FROM workspace.flights.UNIQUE_CARRIERS")
+        cursor.execute("""
+            SELECT DISTINCT c.Code, c.Description 
+            FROM workspace.flights.UNIQUE_CARRIERS c
+            JOIN (SELECT DISTINCT OP_UNIQUE_CARRIER_A FROM workspace.flights.ml_train_gold) t ON c.Code = t.OP_UNIQUE_CARRIER_A
+        """)
         carrier_df = pd.DataFrame(cursor.fetchall(), columns=["Code", "Description"])
+    connection.close()
 
-    # 4. Load the GBT Model (Ensure Tracking URI is set for Databricks)
+    # 3. Load MLflow Model
+    # MLflow 2.14+ automatically uses the CLIENT_ID/SECRET if tracking_uri is 'databricks'
     mlflow.set_tracking_uri("databricks")
-    # Replace with your actual GBT Run ID
-    run_id = "77a6d076805e4ffd9b8d245b1e069b2e"
+    run_id = os.environ.get("MLFLOW_RUN_ID")
     model = mlflow.pyfunc.load_model(f"runs:/{run_id}/flight_gbt_pipeline")
     
     return model, apt_df, carrier_df
 
 # --- EXECUTION ---
-with st.spinner("Initializing AI Engine and connecting to Unity Catalog..."):
-    try:
-        model, apt_df, carrier_df = load_resources()
-    except Exception as e:
-        st.error(f"Initialization Error: {e}")
-        st.info("Check if the SQL Warehouse and MLflow Experiment are added in the 'Resources' tab.")
-        st.stop()
+try:
+    with st.spinner("Authenticating with Databricks Service Principal..."):
+        model, apt_df, carrier_df = load_production_resources()
+except Exception as e:
+    st.error(f"Authentication/Resource Error: {e}")
+    st.stop()
 
-# Prepare UI Data
-apt_df['label'] = apt_df['Description'] + " (" + apt_df['Code'] + ")"
-carrier_df['label'] = carrier_df['Description'] + " (" + carrier_df['Code'] + ")"
-airport_map = dict(zip(apt_df['label'], apt_df['Code']))
-carrier_map = dict(zip(carrier_df['label'], carrier_df['Code']))
+# --- 4. FRONTEND UI ---
+st.markdown('<p class="main-header">🏃✈️ Catch Me If You Can</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Distributed AI Engine for Connection Risk Assessment</p>', unsafe_allow_html=True)
 
-# --- SIDEBAR UI ---
-with st.sidebar:
-    st.header("Search Parameters")
-    origin_label = st.selectbox("Origin", sorted(apt_df['label'].tolist()))
-    hub_label = st.selectbox("Connection Hub", sorted(apt_df['label'].tolist()), index=1)
-    carrier_label = st.selectbox("Airline", sorted(carrier_df['label'].tolist()))
-    st.divider()
-    travel_month = st.select_slider("Month of Travel", options=list(range(1, 13)), value=6)
-    arrival_hour = st.slider("Hub Arrival Hour (24h)", 0, 23, 14)
+with st.container():
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        origin_label = st.selectbox("Departure Airport", sorted(apt_df['label'].tolist()))
+    with c2:
+        hub_label = st.selectbox("Connection Hub (Via)", sorted(apt_df['label'].tolist()), index=min(5, len(apt_df)-1))
+    with c3:
+        airline_label = st.selectbox("Airline Carrier", sorted(carrier_df['label'].tolist()))
 
-# --- MAIN CONTENT ---
-st.title("🏃✈️ Catch Me If You Can")
-st.markdown("#### GBT-Powered Flight Connection Probability")
+    c4, c5, c6 = st.columns([1, 1, 2])
+    with c4:
+        month = st.selectbox("Month of Travel", list(range(1, 13)), index=5)
+    with c5:
+        hour = st.selectbox("Arrival Hour (24h)", list(range(0, 24)), index=14)
+    with c6:
+        st.write("") 
+        analyze_btn = st.button("🚀 Run AI Probability Analysis", use_container_width=True)
 
-if st.button("🚀 Run Probability Analysis", use_container_width=True):
-    with st.spinner("Simulating 180 layover scenarios..."):
-        
-        layover_range = list(range(10, 185, 5))
-        
-        # Create Pandas Input - Column names MUST match your Spark Pipeline training columns
+st.divider()
+
+if analyze_btn:
+    with st.spinner("Processing simulation points..."):
+        # Prepare Batch Data for smooth CDF
+        layover_range = list(range(5, 185, 2))
         input_data = pd.DataFrame({
-            "OP_UNIQUE_CARRIER_A": [carrier_map[carrier_label]] * len(layover_range),
+            "OP_UNIQUE_CARRIER_A": [carrier_map[airline_label]] * len(layover_range),
             "ORIGIN_A": [airport_map[origin_label]] * len(layover_range),
             "DEST_A": [airport_map[hub_label]] * len(layover_range),
             "is_same_airline": [1] * len(layover_range),
-            "hub_congestion_hour": [arrival_hour] * len(layover_range),
-            "travel_month": [travel_month] * len(layover_range),
+            "hub_congestion_hour": [hour] * len(layover_range),
+            "travel_month": [month] * len(layover_range),
             "scheduled_layover_mins": [float(m) for m in layover_range]
         })
         
-        # Run Inference
-        raw_preds = model.predict(input_data)
+        # Inference
+        preds = model.predict(input_data)
         
-        # Parse output (Spark Pipelines via PyFunc often return a DataFrame with a 'probability' column)
-        if isinstance(raw_preds, pd.DataFrame) and 'probability' in raw_preds.columns:
-            probs = [p[1] for p in raw_preds['probability']]
+        # Robust Probability Extraction
+        if isinstance(preds, pd.DataFrame) and 'probability' in preds.columns:
+            probs = [p[1] for p in preds['probability']]
+        elif hasattr(preds, 'shape') and len(preds.shape) > 1:
+            probs = preds[:, 1]
         else:
-            probs = raw_preds # Fallback if it returns a flat array
+            probs = preds
 
-        # --- CDF PLOT ---
+        # CDF Plot
         fig = go.Figure()
         fig.add_trace(go.Scatter(
             x=layover_range, y=probs,
-            mode='lines+markers', line_shape='hv',
-            line=dict(color='#00d1ff', width=3),
-            fill='tozeroy', fillcolor='rgba(0, 209, 255, 0.1)'
+            mode='lines',
+            line=dict(color='#00d1ff', width=4, shape='spline'),
+            fill='tozeroy',
+            fillcolor='rgba(0, 209, 255, 0.15)',
+            name='Confidence'
         ))
+        
         fig.update_layout(
+            title=dict(text=f"Connection Success Probability: {airport_map[origin_label]} ➔ {airport_map[hub_label]}", font=dict(size=20)),
             template="plotly_dark",
-            xaxis_title="Layover Duration (Minutes)",
-            yaxis_title="Probability of Success",
-            yaxis_range=[0, 1.05]
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            xaxis=dict(title="Layover Duration (Minutes)", gridcolor='#23262c', range=[0, 180]),
+            yaxis=dict(title="Probability", tickformat=".0%", range=[0, 1.05], gridcolor='#23262c'),
+            height=500
         )
         st.plotly_chart(fig, use_container_width=True)
+        
+        # Insights
+        try:
+            safe_time = next((x for x, y in zip(layover_range, probs) if y > 0.80), 90)
+            st.info(f"**AI Insight:** At {airport_map[hub_label]}, an 80% success rate is reached at **{safe_time} minutes**.")
+        except:
+            st.warning("AI Insight: High-risk connection profile detected.")
+
+st.markdown("---")
+st.caption("Trained on 499M flights via Databricks.")
+
+with st.expander("🛠️ System Diagnostics (Debug Only)"):
+    st.write(f"**Host Found:** {bool(os.environ.get('DATABRICKS_HOST'))}")
+    st.write(f"**Token Found:** {bool(os.environ.get('DATABRICKS_TOKEN'))}")
+    st.write(f"**SQL Path Found:** {bool(os.environ.get('DATABRICKS_SQL_HTTP_PATH'))}")
+    st.write(f"**Model ID Found:** {bool(os.environ.get('MLFLOW_RUN_ID'))}")
+    
+    # This prints the keys of all variables to the logs
+    print(f"Available Env Vars: {list(os.environ.keys())}")

@@ -1,1 +1,13 @@
-command: ['streamlit', 'run', 'app.py']
+name: catch-me-if-you-can
+
+command: [ "streamlit", "run", "app.py" ]
+
+env:
+  - name: "MLFLOW_RUN_ID"
+    value: "77a6d076805e4ffd9b8d245b1e069b2e"
+
+resources:
+  - name: my_sql_warehouse
+    sql_warehouse_id: "4ca2ab22fd43a24b"
+  - name: my_mlflow_experiment
+    mlflow_experiment_id: "477362658834946"
