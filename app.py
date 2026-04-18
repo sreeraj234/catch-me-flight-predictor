@@ -18,12 +18,11 @@ st.markdown("""
 
 @st.cache_resource
 def get_resources():
-    # CLEAN THE HOSTNAME: The connector fails if it sees 'https://'
     host = os.getenv("DATABRICKS_HOST", "").replace("https://", "")
     token = os.getenv("DATABRICKS_TOKEN")
     http_path = os.getenv("DATABRICKS_SQL_HTTP_PATH")
 
-    # 1. Connect to SQL for Lookups
+    print("--- 🚀 App Startup: Connecting to SQL Warehouse ---")
     connection = sql.connect(
         server_hostname=host,
         http_path=http_path,
@@ -31,18 +30,20 @@ def get_resources():
     )
     
     with connection.cursor() as cursor:
+        print("--- 📊 Fetching Airport Lookups ---")
         cursor.execute("SELECT Code, Description FROM workspace.flights.AIRPORT_CODES")
         airports = pd.DataFrame(cursor.fetchall(), columns=["Code", "Description"])
         
+        print("--- 📊 Fetching Carrier Lookups ---")
         cursor.execute("SELECT Code, Description FROM workspace.flights.UNIQUE_CARRIERS")
         carriers = pd.DataFrame(cursor.fetchall(), columns=["Code", "Description"])
         
-    # 2. Load Model via PyFunc
-    # Replace this with your actual GBT Run ID
+    print("--- 🧠 Loading MLflow Model (This may take a minute...) ---")
     run_id = "77a6d076805e4ffd9b8d245b1e069b2e"
-    # Note: MLflow set_tracking_uri is handled automatically in Databricks Apps
+    # Loading a GBT model flavor can be heavy the first time
     model = mlflow.pyfunc.load_model(f"runs:/{run_id}/flight_gbt_pipeline")
     
+    print("--- ✅ Resources Loaded Successfully ---")
     return model, airports, carriers
 
 # --- EXECUTION ---
