@@ -2,8 +2,10 @@ import os
 import streamlit as st
 import pandas as pd
 import mlflow.pyfunc
-from databricks import sql, WorkspaceClient
+from databricks import sql
+from databricks.sdk import WorkspaceClient
 import plotly.graph_objects as go
+
 
 
 # --- 1. THEME & UI CONFIG ---
