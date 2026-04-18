@@ -10,13 +10,19 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- CUSTOM CSS (To match the clean Hackathon look) ---
+# --- CUSTOM CSS ---
 st.markdown("""
     <style>
     .main { background-color: #f5f7f9; }
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; }
+    .stButton>button { 
+        width: 100%; 
+        border-radius: 5px; 
+        height: 3em; 
+        background-color: #007bff; 
+        color: white; 
+    }
     </style>
-    """, unsafe_allow_name_with_display=True)
+    """, unsafe_allow_html=True)
 
 # --- HEADER ---
 st.title("🏃✈️ Catch Me If You Can")
