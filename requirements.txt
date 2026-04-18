@@ -3,3 +3,5 @@ databricks-sql-connector
 streamlit
 pandas
 plotly
+mlflow
+databricks-sql-connector

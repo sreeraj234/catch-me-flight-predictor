@@ -1,108 +1,120 @@
 import streamlit as st
 import pandas as pd
+import mlflow.pyfunc
+from databricks import sql
 import plotly.graph_objects as go
-import numpy as np
+import os
 
 # --- PAGE CONFIG ---
-st.set_page_config(
-    page_title="Catch Me If You Can",
-    page_icon="🏃✈️",
-    layout="wide"
-)
+st.set_page_config(page_title="Catch Me If You Can", page_icon="✈️", layout="wide")
 
 # --- CUSTOM CSS ---
 st.markdown("""
     <style>
-    .main { background-color: #f5f7f9; }
-    .stButton>button { 
-        width: 100%; 
-        border-radius: 5px; 
-        height: 3em; 
-        background-color: #007bff; 
-        color: white; 
-    }
+    .stApp { background-color: #0e1117; color: #ffffff; }
+    .main-header { font-size: 42px; font-weight: 800; color: #00d1ff; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- HEADER ---
-st.title("🏃✈️ Catch Me If You Can")
-st.markdown("### Search Flights & Connection Setup")
-st.write("Choose a flight, then we compute the probability of making your connection.")
+@st.cache_resource
+def get_resources():
+    # CLEAN THE HOSTNAME: The connector fails if it sees 'https://'
+    host = os.getenv("DATABRICKS_HOST", "").replace("https://", "")
+    token = os.getenv("DATABRICKS_TOKEN")
+    http_path = os.getenv("DATABRICKS_SQL_HTTP_PATH")
 
-# --- SIDEBAR INPUTS ---
-with st.sidebar:
-    st.header("Search Parameters")
-    
-    # Placeholders for now - we will connect these to your BTS lookup tables later
-    origin = st.selectbox("Origin Airport", ["ORD (Chicago)", "SEA (Seattle)", "JFK (New York)"])
-    hub = st.selectbox("Connection Airport (Hub)", ["DTW (Detroit)", "ATL (Atlanta)", "DEN (Denver)"])
-    airline = st.selectbox("Airline", ["Delta (DL)", "United (UA)", "American (AA)"])
-    
-    st.divider()
-    
-    st.subheader("Time Context")
-    month = st.slider("Month of Travel", 1, 12, 6)
-    hour = st.slider("Scheduled Arrival Hour at Hub", 0, 23, 12)
-    
-    st.info("The model accounts for seasonal weather and airport-specific congestion.")
-
-# --- MAIN UI LAYOUT ---
-col1, col2 = st.columns([1, 1])
-
-with col1:
-    st.subheader("📍 Connection Details")
-    st.write(f"**Route:** {origin} ➔ {hub}")
-    st.write(f"**Carrier:** {airline}")
-    
-    # Mock 'Flight List' like your screenshot
-    mock_data = {
-        "Flight #": ["1594"],
-        "Dep Time": ["08:49"],
-        "Arr Time": ["11:10"],
-        "Status": ["On Time"]
-    }
-    st.table(pd.DataFrame(mock_data))
-
-# --- CDF CALCULATION (MOCK LOGIC) ---
-# This simulates the "looping" through layover minutes
-if st.button("📈 Show CDF (Connection Probability)"):
-    
-    # Simulate x-axis: Layover time from 0 to 180 minutes
-    x_layover = np.arange(0, 181, 5)
-    
-    # Simulate y-axis: A 'Stepped' CDF curve using a sigmoid function
-    # In the real version, this will be 180 calls to your GBT model
-    y_prob = 1 / (1 + np.exp(-(x_layover - 45) / 10)) 
-    
-    # --- PLOTLY CHART ---
-    fig = go.Figure()
-
-    # The CDF Line
-    fig.add_trace(go.Scatter(
-        x=x_layover, 
-        y=y_prob, 
-        mode='lines+markers', 
-        name='Probability',
-        line_shape='hv', # 'hv' creates the 'Step' look from your screenshot
-        line=dict(color='#1f77b4', width=3)
-    ))
-
-    # Add a vertical dashed line at a 'standard' 45 min connection
-    fig.add_vline(x=45, line_dash="dash", line_color="red", annotation_text="Typical Gate Close")
-
-    fig.update_layout(
-        title=f"CDF for Connection at {hub}",
-        xaxis_title="Layover Duration (C minutes)",
-        yaxis_title="Probability of Success (%)",
-        yaxis_range=[0, 1.05],
-        template="plotly_white",
-        hovermode="x unified"
+    # 1. Connect to SQL for Lookups
+    connection = sql.connect(
+        server_hostname=host,
+        http_path=http_path,
+        access_token=token
     )
-
-    st.plotly_chart(fig, use_container_width=True)
     
-    # Success Message
-    st.success(f"Based on historical data, a 60-minute layover has a **{y_prob[12]:.1%}** chance of success.")
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT Code, Description FROM workspace.flights.AIRPORT_CODES")
+        airports = pd.DataFrame(cursor.fetchall(), columns=["Code", "Description"])
+        
+        cursor.execute("SELECT Code, Description FROM workspace.flights.UNIQUE_CARRIERS")
+        carriers = pd.DataFrame(cursor.fetchall(), columns=["Code", "Description"])
+        
+    # 2. Load Model via PyFunc
+    # Replace this with your actual GBT Run ID
+    run_id = "77a6d076805e4ffd9b8d245b1e069b2e"
+    # Note: MLflow set_tracking_uri is handled automatically in Databricks Apps
+    model = mlflow.pyfunc.load_model(f"runs:/{run_id}/flight_gbt_pipeline")
+    
+    return model, airports, carriers
 
-else:
-    st.info("Select your flight details and click the button to generate the probability curve.")
+# --- EXECUTION ---
+try:
+    model, apt_df, carrier_df = get_resources()
+except Exception as e:
+    st.error(f"Failed to load resources: {e}")
+    st.stop()
+
+# Prepare Dropdowns
+apt_df['label'] = apt_df['Description'] + " (" + apt_df['Code'] + ")"
+carrier_df['label'] = carrier_df['Description'] + " (" + carrier_df['Code'] + ")"
+airport_map = dict(zip(apt_df['label'], apt_df['Code']))
+carrier_map = dict(zip(carrier_df['label'], carrier_df['Code']))
+
+# --- SIDEBAR ---
+with st.sidebar:
+    st.header("Flight Search")
+    origin_label = st.selectbox("Origin", sorted(apt_df['label'].tolist()))
+    hub_label = st.selectbox("Hub (Via)", sorted(apt_df['label'].tolist()), index=1)
+    carrier_label = st.selectbox("Airline", sorted(carrier_df['label'].tolist()))
+    st.divider()
+    travel_month = st.select_slider("Month", options=list(range(1, 13)), value=6)
+    arrival_hour = st.slider("Arrival Hour", 0, 23, 14)
+
+# --- MAIN UI ---
+st.markdown('<p class="main-header">Catch Me If You Can</p>', unsafe_allow_html=True)
+
+if st.button("🚀 Analyze Connection Success", use_container_width=True):
+    with st.spinner("Calculating probability curve..."):
+        
+        layover_range = list(range(10, 185, 5))
+        
+        # Construct Pandas Input for the Model
+        input_data = pd.DataFrame({
+            "OP_UNIQUE_CARRIER_A": [carrier_map[carrier_label]] * len(layover_range),
+            "ORIGIN_A": [airport_map[origin_label]] * len(layover_range),
+            "DEST_A": [airport_map[hub_label]] * len(layover_range),
+            "is_same_airline": [1] * len(layover_range),
+            "hub_congestion_hour": [arrival_hour] * len(layover_range),
+            "travel_month": [travel_month] * len(layover_range),
+            "scheduled_layover_mins": [float(m) for m in layover_range]
+        })
+        
+        # PyFunc predict on a Spark Pipeline usually returns a DataFrame 
+        # that includes the 'probability' column as a list/array
+        predictions_output = model.predict(input_data)
+        
+        # CDF extraction logic
+        # If the output is a DataFrame with a 'probability' column
+        if isinstance(predictions_output, pd.DataFrame) and 'probability' in predictions_output.columns:
+            # Spark probabilities are [prob_fail, prob_success]
+            probs = [p[1] for p in predictions_output['probability']]
+        else:
+            # Fallback if the model only returns classes
+            probs = predictions_output 
+
+        # --- PLOTLY ---
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=layover_range, y=probs,
+            mode='lines+markers', line_shape='hv',
+            line=dict(color='#00d1ff', width=3),
+            fill='tozeroy', fillcolor='rgba(0, 209, 255, 0.1)'
+        ))
+        fig.update_layout(
+            title=f"Probability Curve: {airport_map[origin_label]} ➔ {airport_map[hub_label]}",
+            template="plotly_dark",
+            xaxis_title="Layover Duration (Minutes)",
+            yaxis_title="Success Probability",
+            yaxis_range=[0, 1.05]
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        st.success("Analysis complete. The curve represents your likelihood of making the connection as layover time increases.")
