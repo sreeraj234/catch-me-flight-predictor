@@ -2,89 +2,76 @@
 
 ![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)
 ![PySpark](https://img.shields.io/badge/PySpark-Data_Processing-orange.svg)
-![Databricks](https://img.shields.io/badge/Databricks-MLflow-red.svg)
+![Databricks](https://img.shields.io/badge/Databricks-Unity_Catalog-red.svg)
+![MLflow](https://img.shields.io/badge/MLflow-Experiment_Tracking-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688.svg)
-![Streamlit](https://img.shields.io/badge/Streamlit-Frontend-FF4B4B.svg)
 
 ## 📌 Project Overview
 **"Catch me if you can..."** – the age-old race through the airport terminal. 
 
-**Catch Me If You Can** is an end-to-end Machine Learning pipeline designed to estimate the likelihood of a passenger successfully making a connecting flight. Originally conceptualized as a winning project at the Databricks x UW Data Science Hackathon, this repository represents the fully engineered, production-ready version.
+**Catch Me If You Can** is an end-to-end Machine Learning pipeline designed to estimate the likelihood of a passenger successfully making a connecting flight. Originally conceptualized as a winning project at the **Databricks x UW Data Science Hackathon**, this repository represents a scaled, production-ready version capable of processing nearly **half a billion simulated itineraries**.
 
-Using millions of rows of historical aviation data, the system relies on **PySpark** for distributed data processing, **Databricks/MLflow** for model tracking, and a decoupled **FastAPI + Streamlit** architecture for real-time inference.
+By leveraging **PySpark** on **Databricks Unity Catalog**, the engine analyzes historical flight patterns, airport congestion, and seasonal weather trends to provide real-time connection probabilities via a **Cumulative Distribution Function (CDF)** visualization.
 
-## 🏗️ Architecture Workflow
-1. **Data Ingestion:** Historical flight data from the Bureau of Transportation Statistics (BTS).
-2. **Data Engineering (PySpark):** Complex self-joins on distributed clusters to generate valid "passenger itineraries" (Flight A -> Hub -> Flight B).
-3. **Machine Learning (Spark MLlib):** Training ensemble models to predict connection success based on layover margins and historical delays.
-4. **Model Registry:** Databricks MLflow for tracking parameters and metrics.
-5. **Serving Layer:** FastAPI REST endpoint hosting the saved model.
-6. **User Interface:** Streamlit web application for interactive predictions.
+## 🚀 Key Highlights
+*   **Scale:** Engineered a distributed pipeline that processed **7 Million raw flights** and executed an optimized non-equi self-join to generate **499 Million connecting flight pairs**.
+*   **Methodology:** Implemented a strict **Out-of-Time (OOT) Validation** strategy, training on the full year of 2024 and testing on a pristine Q1 2025 holdout set.
+*   **Performance:** The champion **Gradient Boosted Trees (GBT)** model achieved an **AUC-ROC of 0.818** and **95% Precision** on unseen 2025 data.
 
-## 📊 Dataset & Features
-**Primary Data Source:** [BTS Airline On-Time Performance Data](https://www.transtats.bts.gov/DL_SelectFields.aspx?gnoyr_VQ=FGJ&QO_fu146_anzr=b0-gvzr)
+## 🏗️ Architecture & Pipeline
+1.  **Data Engineering (PySpark & Unity Catalog):**
+    *   Ingested 12+ months of BTS Airline On-Time Performance data.
+    *   Resolved "midnight rollover" timestamp issues using continuous mathematical reconstruction.
+    *   Optimized a high-volume self-join using day-partitioned hash joins to prevent Cartesian product overhead.
+2.  **Feature Engineering:**
+    *   **Categorical:** One-Hot Encoding for `Airline`, `Origin`, and `Hub`.
+    *   **Temporal:** `Hub_Congestion_Hour` and `Travel_Month` (Seasonality).
+    *   **Interaction:** `Is_Same_Airline` (Proxy for terminal transfer friction).
+3.  **Model Governance (MLflow):**
+    *   Tracked experiments and hyperparameter tuning using MLflow.
+    *   Managed model artifacts and serialization via Unity Catalog Volumes.
+4.  **Serving Layer (In-Progress):**
+    *   Decoupled FastAPI backend hosting the Spark ML Pipeline.
+    *   Streamlit frontend for user-facing probability forecasting and CDF plotting.
 
-**Key Engineered Features:**
-*   `scheduled_layover_time`: Minutes between Flight A's scheduled arrival and Flight B's scheduled departure.
-*   `airline_historical_reliability`: 30-day rolling average delay for the specific airline.
-*   `hub_congestion_index`: Average delay metrics at the connecting airport for the given hour of the day.
-*   `temporal_factors`: Month, Day of Week, Hour of Day (capturing seasonal and daily traffic trends).
+## 📊 Model Performance (2025 Holdout Set)
+| Metric | Random Forest | **GBT (Champion)** |
+| :--- | :--- | :--- |
+| **AUC-ROC** | 0.7880 | **0.8180** |
+| **F1-Score** | 0.7925 | **0.8143** |
+| **Precision** | 0.9504 | **0.9501** |
+| **Recall** | 0.7030 | **0.7342** |
 
-**Target Variable:**
-*   `1 (Success)`: Flight A Actual Arrival + Minimum Connection Time (MCT) < Flight B Actual Departure.
-*   `0 (Missed)`: Passenger failed to make the connection.
+## 🚀 Implementation Roadmap
 
-## 🧠 Models Evaluated
-The project frames this as a binary classification problem (handling class imbalance due to a high success rate in reality).
-*   **Baseline:** Logistic Regression (`pyspark.ml.classification.LogisticRegression`)
-*   **Ensemble 1:** Random Forest (`RandomForestClassifier`) - *Handles non-linear relationships and interactions well.*
-*   **Ensemble 2:** Gradient Boosted Trees (`GBTClassifier`) - *Optimized for maximum ROC-AUC and F1-Score.*
+### Phase 1: Data Engineering & Scaling
+- [x] Setup Databricks Unity Catalog & Volume architecture.
+- [x] Build mathematically robust timestamp reconstruction logic.
+- [x] Execute optimized self-join (499M connections generated).
+- [x] Materialize "Gold" Feature Tables for ML training.
 
-## 🚀 To-Do / Roadmap (Implementation Steps)
+### Phase 2: Distributed Modeling
+- [x] Implement Stratified Undersampling to handle 96/4 class imbalance.
+- [x] Build Spark ML Pipeline (StringIndexer -> OHE -> Assembler).
+- [x] Train and evaluate Random Forest vs. Gradient Boosted Trees.
+- [x] Log model artifacts and metrics to MLflow Registry.
 
-### Phase 1: Data Engineering
-- [x] Setup Databricks Community Edition workspace.
-- [x] Ingest BTS historical flight data (min. 3-6 months) to DBFS.
-- [x] Write PySpark self-join logic to simulate connecting flights.
-- [x] Engineer target variable (`made_connection`).
+### Phase 3: Serving & Deployment (Current)
+- [ ] Export Spark ML Pipeline for local inference.
+- [ ] Develop **FastAPI** wrapper for model serving.
+- [ ] Build **Streamlit** UI with interactive CDF charts.
+- [ ] Containerize and deploy to cloud (Render/Streamlit Cloud).
 
-### Phase 2: Feature Engineering & Modeling
-- [ ] Extract time-based features (layover duration, hour of day).
-- [ ] Extract historical reliability features (airline & hub delays).
-- [ ] Train Baseline Logistic Regression model.
-- [ ] Train GBT / Random Forest model.
-- [ ] Log parameters, F1-scores, and ROC-AUC metrics using MLflow.
-
-### Phase 3: API Backend (FastAPI)
-- [ ] Export the best-performing model pipeline.
-- [ ] Setup a local FastAPI project.
-- [ ] Create a `POST /predict` endpoint that accepts flight details and returns a probability score.
-- [ ] Test API endpoints using Postman or Python `requests`.
-
-### Phase 4: Frontend & Deployment (Streamlit)
-- [ ] Build a Streamlit UI allowing users to input Origin, Hub, Destination, Airlines, and Times.
-- [ ] Connect Streamlit UI to the FastAPI backend.
-- [ ] Deploy FastAPI backend to Render / Railway.
-- [ ] Deploy Streamlit frontend to Streamlit Community Cloud.
-
-## 💻 Local Setup & Installation
-*(Instructions to be updated once API and UI are finalized)*
-
+## 💻 Local Setup
+*(In Development)*
 ```bash
-# Clone the repository
-git clone https://github.com/YourUsername/Flight-Connection-Engine.git
-cd Flight-Connection-Engine
-
-# Create a virtual environment
-python -m venv venv
-source venv/bin/activate  # Mac/Linux
-# venv\Scripts\activate   # Windows
-
-# Install requirements
+git clone https://github.com/YourUsername/Catch-Me-If-You-Can.git
+cd Catch-Me-If-You-Can
 pip install -r requirements.txt
-
-# Run the FastAPI backend
-uvicorn api.main:app --reload
-
-# Run the Streamlit frontend (in a new terminal)
 streamlit run app/frontend.py
+```
+
+---
+*Developed by Sreeraj Parakkat — University of Washington, MS Data Science.*
+
+***
