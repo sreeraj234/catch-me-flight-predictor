@@ -4,19 +4,18 @@
 ![PySpark](https://img.shields.io/badge/PySpark-Data_Processing-orange.svg)
 ![Databricks](https://img.shields.io/badge/Databricks-Unity_Catalog-red.svg)
 ![MLflow](https://img.shields.io/badge/MLflow-Experiment_Tracking-blue.svg)
-![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688.svg)
 
 ## 📌 Project Overview
 **"Catch me if you can..."** – the age-old race through the airport terminal. 
 
 **Catch Me If You Can** is an end-to-end Machine Learning pipeline designed to estimate the likelihood of a passenger successfully making a connecting flight. Originally conceptualized as a winning project at the **Databricks x UW Data Science Hackathon**, this repository represents a scaled, production-ready version capable of processing nearly **half a billion simulated itineraries**.
 
-By leveraging **PySpark** on **Databricks Unity Catalog**, the engine analyzes historical flight patterns, airport congestion, and seasonal weather trends to provide real-time connection probabilities via a **Cumulative Distribution Function (CDF)** visualization.
+By leveraging **PySpark** on **Databricks Unity Catalog**, the engine analyzes historical flight patterns, airport congestion, and seasonal weather trends to provide real-time connection probabilities via a **Probability Distribution Function** visualization.
 
 ## 🚀 Key Highlights
 *   **Scale:** Engineered a distributed pipeline that processed **7 Million raw flights** and executed an optimized non-equi self-join to generate **499 Million connecting flight pairs**.
 *   **Methodology:** Implemented a strict **Out-of-Time (OOT) Validation** strategy, training on the full year of 2024 and testing on a pristine Q1 2025 holdout set.
-*   **Performance:** The champion **Gradient Boosted Trees (GBT)** model achieved an **AUC-ROC of 0.818** and **95% Precision** on unseen 2025 data.
+*   **Performance:** The champion **Gradient Boosted Trees (GBT)** model achieved an **AUC-ROC of 0.8234** and **98% Precision** on unseen 2025 data.
 
 ## 🏗️ Architecture & Pipeline
 1.  **Data Engineering (PySpark & Unity Catalog):**
@@ -37,10 +36,10 @@ By leveraging **PySpark** on **Databricks Unity Catalog**, the engine analyzes h
 ## 📊 Model Performance (2025 Holdout Set)
 | Metric | Random Forest | **GBT (Champion)** |
 | :--- | :--- | :--- |
-| **AUC-ROC** | 0.7880 | **0.8180** |
-| **F1-Score** | 0.7925 | **0.8143** |
-| **Precision** | 0.9504 | **0.9501** |
-| **Recall** | 0.7030 | **0.7342** |
+| **AUC-ROC** | 0.7880 | **0.8234** |
+| **F1-Score** | 0.7925 | **0.8372** |
+| **Precision** | 0.9504 | **0.9868** |
+| **Recall** | 0.7030 | **0.7270** |
 
 ## 🚀 Implementation Roadmap
 
@@ -57,18 +56,16 @@ By leveraging **PySpark** on **Databricks Unity Catalog**, the engine analyzes h
 - [x] Log model artifacts and metrics to MLflow Registry.
 
 ### Phase 3: Serving & Deployment (Current)
-- [ ] Export Spark ML Pipeline for local inference.
-- [ ] Develop **FastAPI** wrapper for model serving.
-- [ ] Build **Streamlit** UI with interactive CDF charts.
-- [ ] Containerize and deploy to cloud (Render/Streamlit Cloud).
+- [x] Export Spark ML Pipeline for local inference.
+- [x] Build **Streamlit** UI with interactive CDF charts.
+- [x] Containerize and deploy to cloud (Render/Streamlit Cloud/Databricks App).
 
 ## 💻 Local Setup
-*(In Development)*
 ```bash
 git clone https://github.com/YourUsername/Catch-Me-If-You-Can.git
 cd Catch-Me-If-You-Can
 pip install -r requirements.txt
-streamlit run app/frontend.py
+streamlit run app.py
 ```
 
 ---
